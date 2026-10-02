@@ -28,12 +28,6 @@
   --shadow: 0 12px 35px rgba(0, 0, 0, 0.16);
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 html,
 body,
 #root {
@@ -457,6 +451,7 @@ input[type="date"] {
   align-items: center;
   gap: 11px;
 
+  width: 100%;
   margin-bottom: 20px;
   padding: 0 13px;
 
@@ -469,26 +464,44 @@ input[type="date"] {
     box-shadow 0.2s ease;
 }
 
+.search-box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(100, 230, 173, 0.08);
+}
+
 .search-box > span {
   flex-shrink: 0;
   color: #8a998e;
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .search-box input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
   height: 44px;
   padding: 0;
 
-  background: transparent;
-  border: none;
-  box-shadow: none;
+  color: var(--text);
+  background: transparent !important;
+  border: none !important;
+  outline: none;
+  box-shadow: none !important;
+  border-radius: 0;
 
   font-size: 12px;
 }
 
 .search-box input:focus {
-  border: none;
-  box-shadow: none;
+  background: transparent !important;
+  border: none !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+.search-box input::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 .table-wrapper {
@@ -841,4 +854,45 @@ tbody tr:last-child td {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.app input,
+.app textarea,
+.app select {
+  background-color: #0e1310 !important;
+  color: #e8eee9 !important;
+  border: 1px solid #303b33;
+  color-scheme: dark;
+}
+
+.app input:focus,
+.app textarea:focus,
+.app select:focus {
+  background-color: #0e1310 !important;
+  color: #e8eee9 !important;
+  outline: none;
+  border-color: #64e6ad;
+  box-shadow: 0 0 0 3px rgba(100, 230, 173, 0.1);
+}
+
+.app input:-webkit-autofill,
+.app input:-webkit-autofill:hover,
+.app input:-webkit-autofill:focus,
+.app textarea:-webkit-autofill,
+.app select:-webkit-autofill {
+  -webkit-text-fill-color: #e8eee9 !important;
+  caret-color: #e8eee9;
+  -webkit-box-shadow: 0 0 0 1000px #0e1310 inset !important;
+  box-shadow: 0 0 0 1000px #0e1310 inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+.app input::placeholder,
+.app textarea::placeholder {
+  color: #77847b;
+  opacity: 1;
+}
+
+.app input[type="date"] {
+  color-scheme: dark;
 }
