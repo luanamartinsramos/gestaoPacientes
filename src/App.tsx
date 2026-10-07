@@ -7,11 +7,20 @@ interface Patient {
   cpf: string;
   birthDate: string;
   phone: string;
+  email: string | null;
+  address: string | null;
+}
+
+interface PatientForm {
+  name: string;
+  cpf: string;
+  birthDate: string;
+  phone: string;
   email: string;
   address: string;
 }
 
-const emptyPatient: Omit<Patient, "id"> = {
+const emptyPatient: PatientForm = {
   name: "",
   cpf: "",
   birthDate: "",
@@ -21,23 +30,63 @@ const emptyPatient: Omit<Patient, "id"> = {
 };
 
 function App() {
-  const [patients, setPatients] = useState<Patient[]>(() => {
-    try {
-      const saved = localStorage.getItem("patients");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [form, setForm] = useState(emptyPatient);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [form, setForm] = useState<PatientForm>(emptyPatient);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    localStorage.setItem("patients", JSON.stringify(patients));
-  }, [patients]);
+    let cancelled = false;
+
+    async function fetchPatients() {
+      try {
+        const response = await fetch("http://localhost:3000/patients");
+
+        if (!response.ok) {
+          throw new Error("Erro ao buscar pacientes");
+        }
+
+        const data = await response.json();
+
+        if (!cancelled) {
+          setPatients(data.patients);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar pacientes:", error);
+
+        if (!cancelled) {
+          setMessage("Não foi possível carregar os pacientes.");
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchPatients();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function refreshPatients() {
+    try {
+      const response = await fetch("http://localhost:3000/patients");
+
+      if (!response.ok) {
+        throw new Error("Erro ao buscar pacientes");
+      }
+
+      const data = await response.json();
+
+      setPatients(data.patients);
+    } catch (error) {
+      console.error("Erro ao atualizar pacientes:", error);
+      setMessage("Não foi possível atualizar a lista de pacientes.");
+    }
+  }
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target;
@@ -48,55 +97,79 @@ function App() {
     }));
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (editingId !== null) {
-      setPatients((previous) =>
-        previous.map((patient) =>
-          patient.id === editingId ? { ...patient, ...form } : patient,
-        ),
-      );
+    try {
+      if (editingId !== null) {
+        setMessage(
+          "A edição ainda será conectada ao backend no próximo passo.",
+        );
+        return;
+      }
 
-      setMessage("Paciente atualizado com sucesso!");
-    } else {
-      const newPatient: Patient = {
-        id: Date.now(),
-        ...form,
-      };
+      const response = await fetch("http://localhost:3000/patients", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(form),
+      });
 
-      setPatients((previous) => [...previous, newPatient]);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          Array.isArray(data.message)
+            ? data.message.join(", ")
+            : data.message || "Erro ao cadastrar paciente",
+        );
+      }
+
       setMessage("Paciente cadastrado com sucesso!");
-    }
+      setForm(emptyPatient);
 
-    setForm(emptyPatient);
-    setEditingId(null);
+      await refreshPatients();
+    } catch (error) {
+      console.error("Erro ao cadastrar paciente:", error);
+
+      if (error instanceof Error) {
+        setMessage(error.message);
+      } else {
+        setMessage("Não foi possível cadastrar o paciente.");
+      }
+    }
   }
 
   function handleEdit(patient: Patient) {
-    const { id, ...patientData } = patient;
+    setForm({
+      name: patient.name,
+      cpf: patient.cpf,
+      birthDate: patient.birthDate ? patient.birthDate.substring(0, 10) : "",
+      phone: patient.phone,
+      email: patient.email || "",
+      address: patient.address || "",
+    });
 
-    setForm(patientData);
-    setEditingId(id);
+    setEditingId(patient.id);
     setMessage("");
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   function handleDelete(id: number) {
     const confirmed = window.confirm(
-      "Tem certeza que deseja excluir este paciente?",
+      "A exclusão ainda será conectada ao backend no próximo passo. Deseja cancelar?",
     );
 
     if (!confirmed) return;
 
-    setPatients((previous) => previous.filter((patient) => patient.id !== id));
-
-    if (editingId === id) {
-      cancelEdit();
-    }
-
-    setMessage("Paciente excluído com sucesso!");
+    setMessage(
+      `A exclusão do paciente ${id} ainda será conectada ao backend no próximo passo.`,
+    );
   }
 
   function cancelEdit() {
@@ -111,11 +184,20 @@ function App() {
       .includes(search.toLowerCase()),
   );
 
+  function formatBirthDate(date: string) {
+    if (!date) {
+      return "—";
+    }
+
+    return new Date(date).toLocaleDateString("pt-BR");
+  }
+
   return (
     <main className="app">
       <header className="topbar">
         <a className="brand" href="#">
           <span className="brand-icon">+</span>
+
           <span>
             Clínica<span className="brand-light">Care</span>
           </span>
@@ -127,12 +209,15 @@ function App() {
       <section className="page-heading">
         <div>
           <span className="eyebrow">PAINEL ADMINISTRATIVO</span>
+
           <h1>Pacientes</h1>
+
           <p>Cadastre e gerencie os pacientes da clínica.</p>
         </div>
 
         <div className="patient-counter">
           <span>Total de pacientes</span>
+
           <strong>{patients.length}</strong>
         </div>
       </section>
@@ -141,10 +226,12 @@ function App() {
         <div className="form-card">
           <div className="section-heading">
             <div className="heading-icon">+</div>
+
             <div>
               <h2>
                 {editingId !== null ? "Editar paciente" : "Novo paciente"}
               </h2>
+
               <p>Preencha os dados abaixo.</p>
             </div>
           </div>
@@ -158,6 +245,7 @@ function App() {
           <form onSubmit={handleSubmit}>
             <div className="field">
               <label htmlFor="name">Nome completo *</label>
+
               <input
                 id="name"
                 name="name"
@@ -171,6 +259,7 @@ function App() {
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="cpf">CPF *</label>
+
                 <input
                   id="cpf"
                   name="cpf"
@@ -183,6 +272,7 @@ function App() {
 
               <div className="field">
                 <label htmlFor="birthDate">Data de nascimento *</label>
+
                 <input
                   id="birthDate"
                   name="birthDate"
@@ -195,6 +285,7 @@ function App() {
 
               <div className="field">
                 <label htmlFor="phone">Telefone *</label>
+
                 <input
                   id="phone"
                   name="phone"
@@ -208,6 +299,7 @@ function App() {
 
               <div className="field">
                 <label htmlFor="email">E-mail</label>
+
                 <input
                   id="email"
                   name="email"
@@ -221,6 +313,7 @@ function App() {
 
             <div className="field">
               <label htmlFor="address">Endereço</label>
+
               <input
                 id="address"
                 name="address"
@@ -254,6 +347,7 @@ function App() {
           <div className="list-heading">
             <div>
               <h2>Pacientes cadastrados</h2>
+
               <p>Consulte e gerencie os registros.</p>
             </div>
 
@@ -264,6 +358,7 @@ function App() {
 
           <div className="search-box">
             <span aria-hidden="true">⌕</span>
+
             <input
               type="search"
               value={search}
@@ -273,14 +368,24 @@ function App() {
             />
           </div>
 
-          {filteredPatients.length === 0 ? (
+          {loading ? (
+            <div className="empty-state">
+              <div className="empty-icon">⏳</div>
+
+              <h3>Carregando pacientes...</h3>
+
+              <p>Aguarde enquanto buscamos os registros.</p>
+            </div>
+          ) : filteredPatients.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">♧</div>
+
               <h3>
                 {search
                   ? "Nenhum paciente encontrado"
                   : "Nenhum paciente cadastrado"}
               </h3>
+
               <p>
                 {search
                   ? "Tente pesquisar com outro nome ou CPF."
@@ -308,21 +413,21 @@ function App() {
                           <span className="avatar">
                             {patient.name.charAt(0).toUpperCase()}
                           </span>
+
                           <div>
                             <strong>{patient.name}</strong>
+
                             <small>{patient.email || "Sem e-mail"}</small>
                           </div>
                         </div>
                       </td>
+
                       <td>{patient.cpf}</td>
+
                       <td>{patient.phone}</td>
-                      <td>
-                        {patient.birthDate
-                          ? new Date(
-                              `${patient.birthDate}T12:00:00`,
-                            ).toLocaleDateString("pt-BR")
-                          : "—"}
-                      </td>
+
+                      <td>{formatBirthDate(patient.birthDate)}</td>
+
                       <td>
                         <div className="row-actions">
                           <button
@@ -333,6 +438,7 @@ function App() {
                           >
                             Editar
                           </button>
+
                           <button
                             type="button"
                             className="action-delete"
