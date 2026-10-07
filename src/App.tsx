@@ -1,33 +1,9 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import { getPatients } from "./services/patientService";
+import { emptyPatient, type Patient, type PatientForm } from "./types/patient";
 
-interface Patient {
-  id: number;
-  name: string;
-  cpf: string;
-  birthDate: string;
-  phone: string;
-  email: string | null;
-  address: string | null;
-}
-
-interface PatientForm {
-  name: string;
-  cpf: string;
-  birthDate: string;
-  phone: string;
-  email: string;
-  address: string;
-}
-
-const emptyPatient: PatientForm = {
-  name: "",
-  cpf: "",
-  birthDate: "",
-  phone: "",
-  email: "",
-  address: "",
-};
+const API_URL = "http://localhost:3000/patients";
 
 function App() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -36,22 +12,18 @@ function App() {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function fetchPatients() {
       try {
-        const response = await fetch("http://localhost:3000/patients");
-
-        if (!response.ok) {
-          throw new Error("Erro ao buscar pacientes");
-        }
-
-        const data = await response.json();
+        const data = await getPatients();
 
         if (!cancelled) {
-          setPatients(data.patients);
+          setPatients(data);
           setLoading(false);
         }
       } catch (error) {
@@ -73,10 +45,10 @@ function App() {
 
   async function refreshPatients() {
     try {
-      const response = await fetch("http://localhost:3000/patients");
+      const response = await fetch(API_URL);
 
       if (!response.ok) {
-        throw new Error("Erro ao buscar pacientes");
+        throw new Error("Erro ao buscar pacientes.");
       }
 
       const data = await response.json();
@@ -100,15 +72,43 @@ function App() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (saving) {
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
     try {
       if (editingId !== null) {
-        setMessage(
-          "A edição ainda será conectada ao backend no próximo passo.",
-        );
+        const response = await fetch(`${API_URL}/${editingId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(form),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            Array.isArray(data.message)
+              ? data.message.join(", ")
+              : data.message || "Erro ao editar paciente.",
+          );
+        }
+
+        setMessage("Paciente atualizado com sucesso!");
+        setForm(emptyPatient);
+        setEditingId(null);
+
+        await refreshPatients();
+
         return;
       }
 
-      const response = await fetch("http://localhost:3000/patients", {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -122,7 +122,7 @@ function App() {
         throw new Error(
           Array.isArray(data.message)
             ? data.message.join(", ")
-            : data.message || "Erro ao cadastrar paciente",
+            : data.message || "Erro ao cadastrar paciente.",
         );
       }
 
@@ -131,13 +131,19 @@ function App() {
 
       await refreshPatients();
     } catch (error) {
-      console.error("Erro ao cadastrar paciente:", error);
+      console.error("Erro ao salvar paciente:", error);
 
-      if (error instanceof Error) {
+      if (error instanceof TypeError) {
+        setMessage(
+          "Não foi possível conectar ao servidor. Verifique se o backend está funcionando.",
+        );
+      } else if (error instanceof Error) {
         setMessage(error.message);
       } else {
-        setMessage("Não foi possível cadastrar o paciente.");
+        setMessage("Não foi possível salvar o paciente.");
       }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -160,16 +166,62 @@ function App() {
     });
   }
 
-  function handleDelete(id: number) {
+  async function handleDelete(id: number) {
+    const patient = patients.find((item) => item.id === id);
+
+    if (!patient || deletingId !== null) {
+      return;
+    }
+
     const confirmed = window.confirm(
-      "A exclusão ainda será conectada ao backend no próximo passo. Deseja cancelar?",
+      `Tem certeza que deseja excluir o paciente "${patient.name}"?`,
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
-    setMessage(
-      `A exclusão do paciente ${id} ainda será conectada ao backend no próximo passo.`,
-    );
+    setDeletingId(id);
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          Array.isArray(data.message)
+            ? data.message.join(", ")
+            : data.message || "Erro ao excluir paciente.",
+        );
+      }
+
+      if (editingId === id) {
+        setForm(emptyPatient);
+        setEditingId(null);
+      }
+
+      setMessage("Paciente excluído com sucesso!");
+
+      await refreshPatients();
+    } catch (error) {
+      console.error("Erro ao excluir paciente:", error);
+
+      if (error instanceof TypeError) {
+        setMessage(
+          "Não foi possível conectar ao servidor. Verifique se o backend está funcionando.",
+        );
+      } else if (error instanceof Error) {
+        setMessage(error.message);
+      } else {
+        setMessage("Não foi possível excluir o paciente.");
+      }
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   function cancelEdit() {
@@ -232,7 +284,11 @@ function App() {
                 {editingId !== null ? "Editar paciente" : "Novo paciente"}
               </h2>
 
-              <p>Preencha os dados abaixo.</p>
+              <p>
+                {editingId !== null
+                  ? "Altere os dados do paciente."
+                  : "Preencha os dados abaixo."}
+              </p>
             </div>
           </div>
 
@@ -329,15 +385,22 @@ function App() {
                   type="button"
                   className="button button-secondary"
                   onClick={cancelEdit}
+                  disabled={saving}
                 >
                   Cancelar
                 </button>
               )}
 
-              <button type="submit" className="button button-primary">
-                {editingId !== null
-                  ? "Salvar alterações"
-                  : "Cadastrar paciente"}
+              <button
+                type="submit"
+                className="button button-primary"
+                disabled={saving}
+              >
+                {saving
+                  ? "Salvando..."
+                  : editingId !== null
+                    ? "Salvar alterações"
+                    : "Cadastrar paciente"}
               </button>
             </div>
           </form>
@@ -434,6 +497,7 @@ function App() {
                             type="button"
                             className="action-edit"
                             onClick={() => handleEdit(patient)}
+                            disabled={deletingId !== null}
                             aria-label={`Editar ${patient.name}`}
                           >
                             Editar
@@ -443,9 +507,12 @@ function App() {
                             type="button"
                             className="action-delete"
                             onClick={() => handleDelete(patient.id)}
+                            disabled={deletingId !== null}
                             aria-label={`Excluir ${patient.name}`}
                           >
-                            Excluir
+                            {deletingId === patient.id
+                              ? "Excluindo..."
+                              : "Excluir"}
                           </button>
                         </div>
                       </td>
